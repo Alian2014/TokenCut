@@ -85,38 +85,52 @@ def mask_color_compose(org, mask, mask_color = [173, 216, 230]) :
     # 这个返回的图像就可以直接显示或保存
     return Image.fromarray(rgb)
 
-
+# 创建了一个参数解析器对象
+# 通过 parser.add_argument() 方法，开发者可以定义程序需要接收哪些命令行参数
+# parser.parse_args() 会自动解析这些参数，并将它们存储在一个对象中，供程序后续使用
 parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 ## input / output dir
+# 输出目录。指定保存分割结果图像的文件夹路径。
 parser.add_argument('--out-dir', type=str, help='output directory')
 
+# ViT 架构。让用户选择使用哪个版本的 Vision Transformer 模型。
 parser.add_argument('--vit-arch', type=str, default='small', choices=['base', 'small'], help='which architecture')
 
+# ViT 特征。选择使用自注意力机制中的哪种特征
 parser.add_argument('--vit-feat', type=str, default='k', choices=['k', 'q', 'v', 'kqv'], help='which features')
 
+# 图像块大小。定义 ViT 模型将图像分割成的块的尺寸
 parser.add_argument('--patch-size', type=int, default=16, choices=[16, 8], help='patch size')
 
+# 图阈值 Tau。这是 TokenCut 算法中用于构建图的相似度阈值 τ
 parser.add_argument('--tau', type=float, default=0.2, help='Tau for tresholding graph')
 
+# 空间 sigma 值，控制空间距离对平滑效果的影响。
 parser.add_argument('--sigma-spatial', type=float, default=16, help='sigma spatial in the bilateral solver')
 
+# 亮度 sigma 值，控制像素亮度差异的影响
 parser.add_argument('--sigma-luma', type=float, default=16, help='sigma luma in the bilateral solver')
 
+# 色度 sigma 值，控制像素颜色差异的影响
 parser.add_argument('--sigma-chroma', type=float, default=8, help='sigma chroma in the bilateral solver')
 
 
+# 数据集名称。如果要在标准数据集上进行批量评估，可以在此指定
 parser.add_argument('--dataset', type=str, default=None, choices=['ECSSD', 'DUTS', 'DUT', None], help='which dataset?')
 
+# 可视化数量。在处理数据集时，指定要保存多少张可视化结果图。
 parser.add_argument('--nb-vis', type=int, default=100, choices=[1, 200], help='nb of visualization')
 
+# 单张图片路径。如果只想处理单张图片，通过这个参数指定其路径。
 parser.add_argument('--img-path', type=str, default=None, help='single image visualization')
 
 args = parser.parse_args()
 print (args)
 
 ## feature net
-
+# 这段代码的功能是根据用户通过命令行参数指定的 ViT 模型架构 (vit-arch) 和 图像块大小 (patch_size)，
+# 来选择加载哪个具体的预训练模型权重文件，并设定相应的特征维度 (feat_dim)
 if args.vit_arch == 'base' and args.patch_size == 16:
     url = "/dino/dino_vitbase16_pretrain/dino_vitbase16_pretrain.pth"
     feat_dim = 768
@@ -126,9 +140,11 @@ elif args.vit_arch == 'base' and args.patch_size == 8:
 elif args.vit_arch == 'small' and args.patch_size == 16:
     url = "/dino/dino_deitsmall16_pretrain/dino_deitsmall16_pretrain.pth"
     feat_dim = 384
+# 疑似错误
 elif args.vit_arch == 'base' and args.patch_size == 8:
     url = "/dino/dino_deitsmall8_300ep_pretrain/dino_deitsmall8_300ep_pretrain.pth"
 
+# 加载一个在 DINO 框架下预训练好的 Vision Transformer (ViT) 模型，并将其用作计算机视觉任务中的特征提取器
 backbone = dino.ViTFeat(url, feat_dim, args.vit_arch, args.vit_feat, args.patch_size)
 #    resume_path = './model/dino_vitbase16_pretrain.pth' if args.patch_size == 16 else './model/dino_vitbase8_pretrain.pth'
 
@@ -143,9 +159,12 @@ backbone = dino.ViTFeat(url, feat_dim, args.vit_arch, args.vit_feat, args.patch_
 
 msg = 'Load {} pre-trained feature...'.format(args.vit_arch)
 print (msg)
+# 设置为评估模式
 backbone.eval()
+# 移动到gpu加速运算
 backbone.cuda()
 
+# 获取数据集位置
 if args.dataset == 'ECSSD' :
     args.img_dir = '../datasets/ECSSD/img'
     args.gt_dir = '../datasets/ECSSD/gt'
@@ -164,54 +183,82 @@ elif args.dataset is None :
 
 print(args.dataset)
 
+# 检测输出目录是否存在，否则创建目录
 if args.out_dir is not None and not os.path.exists(args.out_dir) :
     os.mkdir(args.out_dir)
 
+# 7
+# 创建一个待处理图像的清单 img_list
+# 单图情况
 if args.img_path is not None:
     args.nb_vis = 1
     img_list = [args.img_path]
+# 多图情况
 else:
     img_list = sorted(os.listdir(args.img_dir))
 
+
+# 一个计数器，用于控制保存多少张可视化图片
 count_vis = 0
+# 用来存储 TokenCut 算法直接生成的原始分割结果
 mask_lost = []
+# 用来存储经过双边求解器优化后的精细化分割结果
 mask_bfs = []
+# 用来存储用于评估的真实标签（Ground Truth）
 gt = []
+# 代码开始遍历之前准备好的 img_list
 for img_name in tqdm(img_list) :
+    #  确定图像路径
     if args.img_path is not None:
         img_pth = img_name
         img_name = img_name.split("/")[-1]
         print(img_name)
     else:
         img_pth = os.path.join(args.img_dir, img_name)
-    
+
+    # 这个函数接收图像路径 img_pth 和预训练的模型 backbone 等参数，
+    # 执行 TokenCut 算法，
+    # 生成一个初步的二值分割图 bipartition（一个只包含两种值的数组，代表前景和背景）
     bipartition, eigvec = get_tokencut_binary_map(img_pth, backbone, args.patch_size, args.tau)
+    # 存储原始分割结果
     mask_lost.append(bipartition)
 
+    # 双边求解器获得精细化分割结果
     output_solver, binary_solver = bilateral_solver.bilateral_solver_output(img_pth, bipartition, sigma_spatial = args.sigma_spatial, sigma_luma = args.sigma_luma, sigma_chroma = args.sigma_chroma)
     mask1 = torch.from_numpy(bipartition).cuda()
     mask2 = torch.from_numpy(binary_solver).cuda()
+    # 确保优化后的蒙版 binary_solver 没有被意外地“反色”（即把前景当成背景）
     if metric.IoU(mask1, mask2) < 0.5:
         binary_solver = binary_solver * -1
+    # 存储精细化分割结果
     mask_bfs.append(output_solver)
 
+    # 如果用户提供了包含标准答案（真实分割图）的目录 args.gt_dir，就会读取对应的 .png 格式的真实蒙版，以便后续进行精度评估
     if args.gt_dir is not None :
         mask_gt = np.array(Image.open(os.path.join(args.gt_dir, img_name.replace('.jpg', '.png'))).convert('L'))
         gt.append(mask_gt)
 
+    # 这部分代码负责将结果保存成图片，方便人工查看
     if count_vis != args.nb_vis :
+        # 将输出目录 (args.out_dir) 和当前正在处理的图片文件名 (img_name) 打印到控制台
         print(f'args.out_dir: {args.out_dir}, img_name: {img_name}')
+        # 这行代码将输出目录 args.out_dir 和原始图片名 img_name 拼接起来，生成一个用于保存原始图片副本的完整路径
         out_name = os.path.join(args.out_dir, img_name)
         out_lost = os.path.join(args.out_dir, img_name.replace('.jpg', '_tokencut.jpg'))
         out_bfs = os.path.join(args.out_dir, img_name.replace('.jpg', '_tokencut_bfs.jpg'))
         #out_eigvec = os.path.join(args.out_dir, img_name.replace('.jpg', '_tokencut_eigvec.jpg'))
 
+        # 复制原始图片
         copyfile(img_pth, out_name)
+        # 读取一张图片文件，将其转换为标准的RGB颜色格式，并最终变成一个NumPy数组
         org = np.array(Image.open(img_pth).convert('RGB'))
 
         #plt.imsave(fname=out_eigvec, arr=eigvec, cmap='cividis')
+        # 将 TokenCut 原始蒙版叠加在原图上并保存
         mask_color_compose(org, bipartition).save(out_lost)
+        # 将优化后的蒙版叠加在原图上并保存
         mask_color_compose(org, binary_solver).save(out_bfs)
+        # 如果有真实标签，也将其叠加在原图上保存，方便对比
         if args.gt_dir is not None :
             out_gt = os.path.join(args.out_dir, img_name.replace('.jpg', '_gt.jpg'))
             mask_color_compose(org, mask_gt).save(out_gt)
@@ -221,7 +268,10 @@ for img_name in tqdm(img_list) :
     else :
         continue
 
+# 对分割算法的性能进行定量评估并打印评估结果
+# 用户必须提供了包含真实分割图（标准答案）的目录。没有标准答案，就无法进行评估
 if args.gt_dir is not None and args.img_path is None:
+
     print ('TokenCut evaluation:')
     print (metric.metrics(mask_lost, gt))
     print ('\n')
