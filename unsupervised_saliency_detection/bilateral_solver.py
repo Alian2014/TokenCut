@@ -145,14 +145,28 @@ class BilateralSolver(object):
         xhat = self.grid.slice(yhat)
         return xhat
 
+
+'''
+bilateral_solver_output：                接收一个粗糙的目标掩码，输出一个经过优化的“软掩码”和一个经过清理的最终“硬掩码”。
+
+img_pth: 原始 RGB 图像的路径，作为边缘参考。
+
+target: 粗糙的分割掩码（来自 NCut 的 bipartition）。
+
+sigma_*: 双边空间中的三个关键超参数，分别控制空间、亮度和色度上的相似性权重。
+'''
+
+
 def bilateral_solver_output(img_pth, target, sigma_spatial = 24, sigma_luma = 4, sigma_chroma = 4) : 
-    
+    #  首先加载原始图像 reference，算法将依据这张图的边缘信息进行优化
     reference = np.array(Image.open(img_pth).convert('RGB'))
+    #
     h, w = target.shape
+    # 创建一个与目标掩码 target 等大的 confidence 图。所有像素的置信度都被设为 0.999，这表示算法在初始阶段高度信任输入的粗糙掩码 target 的结果。
     confidence = np.ones((h, w)) * 0.999
     
 
-    
+    # 定义 grid_params 和 bs_params 两个字典，分别存储构建双边网格 (Bilateral Grid) 和运行求解器 (Solver) 所需的超参数
     grid_params = {
         'sigma_luma' : sigma_luma, # Brightness bandwidth
         'sigma_chroma': sigma_chroma, # Color bandwidth

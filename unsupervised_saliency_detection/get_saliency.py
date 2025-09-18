@@ -224,6 +224,15 @@ for img_name in tqdm(img_list) :
     mask_lost.append(bipartition)
 
     # 双边求解器获得精细化分割结果
+    '''
+    output_solver: 软掩码 (Soft Mask)，它的像素值是连续的浮点数，范围可能在 0.0 到 1.0 之间（或其他连续区间）。
+
+    含义: 图像中每个像素点的值，代表了该点属于前景物体的置信度或概率。例如，值越接近1.0，表示属于前景的可能性越高；值越接近0.0，表示属于背景的可能性越高。
+    
+    binary_solver: 硬掩码 (Hard Mask)，它的像素值是离散的，通常只有两个值，例如 0 和 1，或者 -1 和 +1，分别代表背景和前景。
+    
+    含义: 它为图像中的每个像素点提供了一个明确的分类：要么是前景，要么是背景，没有中间状态
+    '''
     output_solver, binary_solver = bilateral_solver.bilateral_solver_output(img_pth, bipartition, sigma_spatial = args.sigma_spatial, sigma_luma = args.sigma_luma, sigma_chroma = args.sigma_chroma)
     mask1 = torch.from_numpy(bipartition).cuda()
     mask2 = torch.from_numpy(binary_solver).cuda()
